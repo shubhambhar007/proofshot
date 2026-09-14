@@ -81,7 +81,7 @@ func record(args []string) int {
 	reader := bufio.NewReader(os.Stdin)
 	results := []report.CommandResult{}
 	for {
-		fmt.Fprintf(os.Stderr, "proofshot:%s$ ", filepath.Base(workingDir))
+		fmt.Fprintf(os.Stderr, "proofshot:%s$ ", displayDirectory(workingDir))
 		line, err := reader.ReadString('\n')
 		command := strings.TrimSpace(line)
 		if command == "exit" || command == "quit" {
@@ -122,6 +122,19 @@ func record(args []string) int {
 	}
 	printResult(r, files)
 	return 0
+}
+
+func displayDirectory(directory string) string {
+	home, err := os.UserHomeDir()
+	if err == nil {
+		if directory == home {
+			return "~"
+		}
+		if strings.HasPrefix(directory, home+string(os.PathSeparator)) {
+			return "~" + strings.TrimPrefix(directory, home)
+		}
+	}
+	return directory
 }
 
 func changeDirectory(command, current string) (string, bool, error) {

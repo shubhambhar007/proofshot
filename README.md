@@ -49,12 +49,14 @@ Record commands interactively, then type `exit` or press Ctrl-D to create the re
 ```sh
 proofshot record --title "Debugging checkout failure" --out checkout-debug
 
-proofshot:project$ npm test
-proofshot:project$ git status
-proofshot:project$ exit
+proofshot:~/projects/app$ npm test
+proofshot:~/projects/app$ git status
+proofshot:~/projects/app$ cd ../another-project
+proofshot:~/projects/another-project$ go test ./...
+proofshot:~/projects/another-project$ exit
 ```
 
-Commands execute in sequence with output shown live and captured simultaneously. Directory changes made with `cd` persist during the recording. The recorder is intentionally command-oriented; full-screen programs such as Vim and interactive password prompts are not supported in this MVP.
+The prompt shows the current working directory (shortening your home directory to `~`). Commands execute in sequence with output shown live and captured simultaneously. Directory changes made with `cd` persist during the recording and update the prompt immediately. The recorder is intentionally command-oriented; full-screen programs such as Vim and interactive password prompts are not supported in this MVP.
 
 Quoted positional commands work too:
 
