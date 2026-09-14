@@ -7,6 +7,7 @@ It is deliberately not another code-screenshot tool. Proofshot captures multiple
 ## MVP features
 
 - Run any number of commands in sequence
+- Record an unplanned, command-by-command terminal session with live output
 - Capture combined stdout and stderr, exit code, runtime, and timeout status
 - Automatically redact API keys, bearer tokens, GitHub tokens, AWS access keys, and Stripe-style keys
 - Create a searchable, printable HTML report
@@ -42,6 +43,18 @@ proofshot run \
   -c "git status" \
   --title "Release verification"
 ```
+
+Record commands interactively, then type `exit` or press Ctrl-D to create the report:
+
+```sh
+proofshot record --title "Debugging checkout failure" --out checkout-debug
+
+proofshot:project$ npm test
+proofshot:project$ git status
+proofshot:project$ exit
+```
+
+Commands execute in sequence with output shown live and captured simultaneously. Directory changes made with `cd` persist during the recording. The recorder is intentionally command-oriented; full-screen programs such as Vim and interactive password prompts are not supported in this MVP.
 
 Quoted positional commands work too:
 

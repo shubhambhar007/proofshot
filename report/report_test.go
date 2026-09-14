@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,6 +29,14 @@ func TestExecuteCapturesFailure(t *testing.T) {
 	}
 	if !strings.Contains(r.Output, "hello") || !strings.Contains(r.Output, "problem") {
 		t.Fatalf("missing output: %q", r.Output)
+	}
+}
+
+func TestExecuteLiveMirrorsAndCapturesOutput(t *testing.T) {
+	var live bytes.Buffer
+	r := ExecuteLive("printf hello", "", time.Second, true, nil, &live)
+	if r.Output != "hello" || live.String() != "hello" {
+		t.Fatalf("captured %q, mirrored %q", r.Output, live.String())
 	}
 }
 

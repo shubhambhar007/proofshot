@@ -1,16 +1,19 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/shubhambhar007/proofshot/report"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 type commandsFlag []string
 
@@ -31,6 +34,8 @@ func main() {
 		os.Exit(run(os.Args[2:]))
 	case "render":
 		os.Exit(render(os.Args[2:]))
+	case "record":
+		os.Exit(record(os.Args[2:]))
 	case "compare":
 		os.Exit(compare(os.Args[2:]))
 	case "verify":
@@ -44,6 +49,112 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+}
+
+func record(args []string) int {
+	fs := flag.NewFlagSet("record", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	out := fs.String("out", "proofshot-session", "output directory")
+	title := fs.String("title", "Terminal session", "report title")
+	cwd := fs.String("cwd", "", "starting working directory")
+	noRedact := fs.Bool("no-redact", false, "disable automatic secret redaction")
+	timeout := fs.Duration("timeout", 30*time.Minute, "timeout per command")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "proofshot record does not accept positional commands")
+		return 2
+	}
+	workingDir := *cwd
+	if workingDir == "" {
+		var err error
+		workingDir, err = os.Getwd()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
+
+	fmt.Fprintln(os.Stderr, "Proofshot recording started. Type commands normally; use exit or Ctrl-D to finish.")
+	fmt.Fprintln(os.Stderr, "Tip: `cd` is preserved between commands.")
+	reader := bufio.NewReader(os.Stdin)
+	results := []report.CommandResult{}
+	for {
+		fmt.Fprintf(os.Stderr, "proofshot:%s$ ", filepath.Base(workingDir))
+		line, err := reader.ReadString('\n')
+		command := strings.TrimSpace(line)
+		if command == "exit" || command == "quit" {
+			break
+		}
+		if command != "" {
+			if next, ok, cdErr := changeDirectory(command, workingDir); ok {
+				result := report.CommandResult{Command: command, StartedAt: time.Now()}
+				if cdErr != nil {
+					result.ExitCode = 1
+					result.Output = cdErr.Error() + "\n"
+					fmt.Fprint(os.Stderr, result.Output)
+				} else {
+					workingDir = next
+				}
+				result.Findings = report.Analyze(result)
+				results = append(results, result)
+			} else {
+				results = append(results, report.ExecuteLive(command, workingDir, *timeout, !*noRedact, nil, os.Stdout))
+			}
+		}
+		if err != nil {
+			if err != io.EOF {
+				fmt.Fprintln(os.Stderr, "read command:", err)
+			}
+			break
+		}
+	}
+	if len(results) == 0 {
+		fmt.Fprintln(os.Stderr, "No commands captured; no report created.")
+		return 0
+	}
+	r := report.New(*title, results)
+	files, err := report.WriteBundle(r, *out)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "write report:", err)
+		return 1
+	}
+	printResult(r, files)
+	return 0
+}
+
+func changeDirectory(command, current string) (string, bool, error) {
+	if command != "cd" && !strings.HasPrefix(command, "cd ") {
+		return current, false, nil
+	}
+	target := strings.TrimSpace(strings.TrimPrefix(command, "cd"))
+	if target == "" || target == "~" {
+		home, err := os.UserHomeDir()
+		return home, true, err
+	}
+	target = strings.Trim(target, "\"'")
+	if strings.HasPrefix(target, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return current, true, err
+		}
+		target = filepath.Join(home, strings.TrimPrefix(target, "~/"))
+	} else if !filepath.IsAbs(target) {
+		target = filepath.Join(current, target)
+	}
+	resolved, err := filepath.Abs(target)
+	if err != nil {
+		return current, true, err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return current, true, fmt.Errorf("cd: %w", err)
+	}
+	if !info.IsDir() {
+		return current, true, fmt.Errorf("cd: %s: not a directory", target)
+	}
+	return resolved, true, nil
 }
 
 func compare(args []string) int {
@@ -182,6 +293,7 @@ func usage() {
 
 Usage:
   proofshot run -c "npm test" -c "npm run build" [options]
+  proofshot record [--title "Debugging session"] [--out proofshot-session]
   proofshot run "npm test" "git status" [options]
   proofshot render app.log server.log [options]
   proofshot compare --out comparison.md before/report.json after/report.json

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -14,14 +15,21 @@ import (
 )
 
 type lockedBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
+	mu   sync.Mutex
+	b    bytes.Buffer
+	live io.Writer
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.b.Write(p)
+	n, err := b.b.Write(p)
+	if b.live != nil {
+		if _, liveErr := b.live.Write(p); err == nil {
+			err = liveErr
+		}
+	}
+	return n, err
 }
 
 func (b *lockedBuffer) String() string {
@@ -31,6 +39,15 @@ func (b *lockedBuffer) String() string {
 }
 
 func Execute(command, cwd string, timeout time.Duration, redact bool) CommandResult {
+	return execute(command, cwd, timeout, redact, nil, nil)
+}
+
+// ExecuteLive captures a command while mirroring its output to the terminal.
+func ExecuteLive(command, cwd string, timeout time.Duration, redact bool, stdin io.Reader, live io.Writer) CommandResult {
+	return execute(command, cwd, timeout, redact, stdin, live)
+}
+
+func execute(command, cwd string, timeout time.Duration, redact bool, stdin io.Reader, live io.Writer) CommandResult {
 	started := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -44,7 +61,8 @@ func Execute(command, cwd string, timeout time.Duration, redact bool) CommandRes
 		cmd.Dir = cwd
 	}
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "CLICOLOR_FORCE=1", "FORCE_COLOR=1")
-	var output lockedBuffer
+	output := lockedBuffer{live: live}
+	cmd.Stdin = stdin
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 	err := cmd.Run()
