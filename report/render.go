@@ -44,11 +44,55 @@ func WriteBundle(report Report, directory string) ([]string, error) {
 	}
 	files = append(files, htmlPath)
 
+	markdownPath := filepath.Join(directory, "summary.md")
+	if err := WriteMarkdownSummary(report, markdownPath); err != nil {
+		return nil, err
+	}
+	files = append(files, markdownPath)
+
 	pngs, err := writePNGs(report, directory)
 	if err != nil {
 		return nil, err
 	}
-	return append(files, pngs...), nil
+	files = append(files, pngs...)
+	manifestPath, err := writeManifest(directory, files)
+	if err != nil {
+		return nil, err
+	}
+	return append(files, manifestPath), nil
+}
+
+func WriteMarkdownSummary(r Report, path string) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s\n\n", r.Title)
+	fmt.Fprintf(&b, "**%d commands · %d failed · %s**\n\n", len(r.Commands), r.Failed, r.Duration.Round(time.Millisecond))
+	for _, command := range r.Commands {
+		status := "✅"
+		if command.ExitCode != 0 || command.TimedOut {
+			status = "❌"
+		}
+		fmt.Fprintf(&b, "## %s `%s`\n\nExit %d · %s", status, command.Command, command.ExitCode, command.Duration.Round(time.Millisecond))
+		if command.Redactions > 0 {
+			fmt.Fprintf(&b, " · %d secret(s) redacted", command.Redactions)
+		}
+		b.WriteString("\n\n")
+		for _, finding := range command.Findings {
+			fmt.Fprintf(&b, "- **%s:** %s", finding.Kind, finding.Summary)
+			if finding.File != "" {
+				fmt.Fprintf(&b, " (`%s", finding.File)
+				if finding.Line > 0 {
+					fmt.Fprintf(&b, ":%d", finding.Line)
+				}
+				b.WriteString("`)")
+			}
+			b.WriteString("\n")
+		}
+		if len(command.Findings) > 0 {
+			b.WriteString("\n")
+		}
+	}
+	fmt.Fprintf(&b, "---\nIntegrity: `%s`\n", r.Integrity)
+	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
 var htmlTemplate = template.Must(template.New("report").Funcs(template.FuncMap{
@@ -61,7 +105,7 @@ var htmlTemplate = template.Must(template.New("report").Funcs(template.FuncMap{
 		return "failed"
 	},
 }).Parse(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Title}}</title><style>
-:root{color-scheme:dark;--bg:#090b10;--card:#11151d;--line:#242b38;--text:#e8edf5;--muted:#8d99aa;--green:#49d17d;--red:#ff6b6b;--accent:#8ba4ff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0,#172036 0,transparent 35%),var(--bg);color:var(--text);font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:1120px;margin:auto;padding:48px 24px 80px}header{display:flex;justify-content:space-between;gap:24px;align-items:end;margin-bottom:28px}h1{font:700 38px/1.1 system-ui;margin:0 0 9px}.eyebrow{color:var(--accent);font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:11px}.muted{color:var(--muted)}.summary{display:flex;gap:10px;flex-wrap:wrap}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 11px;background:#0c1017}.command{background:rgba(17,21,29,.92);border:1px solid var(--line);border-radius:15px;margin:16px 0;overflow:hidden}.command-head{padding:15px 18px;display:flex;gap:14px;align-items:center;border-bottom:1px solid var(--line)}.dot{width:9px;height:9px;border-radius:50%;background:var(--green);flex:none}.failed .dot{background:var(--red)}code{overflow-wrap:anywhere;color:#f0f3fa}.meta{margin-left:auto;color:var(--muted);white-space:nowrap}pre{margin:0;padding:18px;overflow:auto;max-height:70vh;white-space:pre-wrap;word-break:break-word;background:#0c0f15;color:#cdd6e5}.empty{color:var(--muted);font-style:italic}.redacted{color:#ffcc66}footer{margin-top:30px;color:var(--muted);font-size:12px}@media print{body{background:white;color:#111}.command{break-inside:avoid;border-color:#ddd}pre{max-height:none;background:#f7f7f7;color:#111}.muted,.meta,footer{color:#666}}</style></head><body><main><header><div><div class="eyebrow">Proofshot report</div><h1>{{.Title}}</h1><div class="muted">Captured {{.CreatedAt.Format "02 Jan 2006 · 15:04 MST"}}</div></div><div class="summary"><span class="pill">{{len .Commands}} commands</span><span class="pill">{{.Failed}} failed</span><span class="pill">{{duration .Duration}}</span></div></header>{{range .Commands}}<section class="command {{status .ExitCode}}"><div class="command-head"><span class="dot"></span><code>$ {{.Command}}</code><span class="meta">exit {{.ExitCode}} · {{duration .Duration}}{{if .Redactions}} · {{.Redactions}} redacted{{end}}</span></div><pre>{{if .Output}}{{plain .Output}}{{else}}<span class="empty">No output</span>{{end}}</pre></section>{{end}}<footer>Generated locally by Proofshot · Searchable, portable, and secret-aware.</footer></main></body></html>`))
+:root{color-scheme:dark;--bg:#090b10;--card:#11151d;--line:#242b38;--text:#e8edf5;--muted:#8d99aa;--green:#49d17d;--red:#ff6b6b;--accent:#8ba4ff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0,#172036 0,transparent 35%),var(--bg);color:var(--text);font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:1120px;margin:auto;padding:48px 24px 80px}header{display:flex;justify-content:space-between;gap:24px;align-items:end;margin-bottom:28px}h1{font:700 38px/1.1 system-ui;margin:0 0 9px}.eyebrow{color:var(--accent);font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:11px}.muted{color:var(--muted)}.summary{display:flex;gap:10px;flex-wrap:wrap}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 11px;background:#0c1017}.command{background:rgba(17,21,29,.92);border:1px solid var(--line);border-radius:15px;margin:16px 0;overflow:hidden}.command-head{padding:15px 18px;display:flex;gap:14px;align-items:center;border-bottom:1px solid var(--line)}.dot{width:9px;height:9px;border-radius:50%;background:var(--green);flex:none}.failed .dot{background:var(--red)}code{overflow-wrap:anywhere;color:#f0f3fa}.meta{margin-left:auto;color:var(--muted);white-space:nowrap}.findings{padding:14px 18px;background:#1b1217;border-bottom:1px solid #44232d}.finding{margin:4px 0}.finding b{color:#ff9b9b}.location{color:var(--accent)}pre{margin:0;padding:18px;overflow:auto;max-height:70vh;white-space:pre-wrap;word-break:break-word;background:#0c0f15;color:#cdd6e5}.empty{color:var(--muted);font-style:italic}footer{margin-top:30px;color:var(--muted);font-size:12px}@media print{body{background:white;color:#111}.command{break-inside:avoid;border-color:#ddd}pre{max-height:none;background:#f7f7f7;color:#111}.muted,.meta,footer{color:#666}}</style></head><body><main><header><div><div class="eyebrow">Proofshot report</div><h1>{{.Title}}</h1><div class="muted">Captured {{.CreatedAt.Format "02 Jan 2006 · 15:04 MST"}}</div></div><div class="summary"><span class="pill">{{len .Commands}} commands</span><span class="pill">{{.Failed}} failed</span><span class="pill">{{duration .Duration}}</span></div></header>{{range .Commands}}<section class="command {{status .ExitCode}}"><div class="command-head"><span class="dot"></span><code>$ {{.Command}}</code><span class="meta">exit {{.ExitCode}} · {{duration .Duration}}{{if .Redactions}} · {{.Redactions}} redacted{{end}}</span></div>{{if .Findings}}<div class="findings">{{range .Findings}}<div class="finding"><b>{{.Kind}}</b> · {{.Summary}}{{if .File}} <span class="location">{{.File}}{{if .Line}}:{{.Line}}{{end}}</span>{{end}}</div>{{end}}</div>{{end}}<pre>{{if .Output}}{{plain .Output}}{{else}}<span class="empty">No output</span>{{end}}</pre></section>{{end}}<footer>Generated locally by Proofshot · Integrity {{.Integrity}} · Searchable, portable, and secret-aware.</footer></main></body></html>`))
 
 func writeHTML(r Report, path string) error {
 	f, err := os.Create(path)
@@ -85,6 +129,15 @@ func reportLines(r Report) []renderedLine {
 			kind = 3
 		}
 		lines = append(lines, renderedLine{fmt.Sprintf("$ %s", command.Command), kind}, renderedLine{fmt.Sprintf("exit %d  ·  %s  ·  %d redacted", command.ExitCode, command.Duration.Round(time.Millisecond), command.Redactions), 1})
+		for _, finding := range command.Findings {
+			location := ""
+			if finding.File != "" {
+				location = fmt.Sprintf(" [%s:%d]", finding.File, finding.Line)
+			}
+			for _, part := range wrap("! "+finding.Kind+": "+finding.Summary+location, maxColumns) {
+				lines = append(lines, renderedLine{part, 3})
+			}
+		}
 		for _, line := range strings.Split(StripANSI(command.Output), "\n") {
 			wrapped := wrap(line, maxColumns)
 			for _, part := range wrapped {

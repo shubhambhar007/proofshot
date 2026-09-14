@@ -60,11 +60,13 @@ func Execute(command, cwd string, timeout time.Duration, redact bool) CommandRes
 	if redact {
 		text, redactions = Redact(text)
 	}
-	return CommandResult{
+	result := CommandResult{
 		Command: command, Output: text, ExitCode: exitCode,
 		Duration: time.Since(started), StartedAt: started,
 		TimedOut: ctx.Err() == context.DeadlineExceeded, Redactions: redactions,
 	}
+	result.Findings = Analyze(result)
+	return result
 }
 
 func FromFile(path string, redact bool) (CommandResult, error) {
@@ -76,7 +78,9 @@ func FromFile(path string, redact bool) (CommandResult, error) {
 	if redact {
 		text, count = Redact(text)
 	}
-	return CommandResult{Command: path, Output: text, ExitCode: 0, StartedAt: time.Now(), Redactions: count}, nil
+	result := CommandResult{Command: path, Output: text, ExitCode: 0, StartedAt: time.Now(), Redactions: count}
+	result.Findings = Analyze(result)
+	return result, nil
 }
 
 var secretPatterns = []*regexp.Regexp{

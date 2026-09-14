@@ -10,7 +10,7 @@ import (
 	"github.com/shubhambhar007/proofshot/report"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 type commandsFlag []string
 
@@ -31,6 +31,10 @@ func main() {
 		os.Exit(run(os.Args[2:]))
 	case "render":
 		os.Exit(render(os.Args[2:]))
+	case "compare":
+		os.Exit(compare(os.Args[2:]))
+	case "verify":
+		os.Exit(verify(os.Args[2:]))
 	case "version", "--version", "-v":
 		fmt.Println("proofshot", version)
 	case "help", "--help", "-h":
@@ -40,6 +44,59 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+}
+
+func compare(args []string) int {
+	fs := flag.NewFlagSet("compare", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	out := fs.String("out", "comparison.md", "comparison Markdown path")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 2 {
+		fmt.Fprintln(os.Stderr, "proofshot compare needs two report.json files")
+		return 2
+	}
+	before, err := report.ReadReport(fs.Arg(0))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	after, err := report.ReadReport(fs.Arg(1))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	comparison := report.Compare(before, after)
+	if err := os.WriteFile(*out, []byte(comparison.Markdown()), 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "✓ compared %d command(s) → %s\n", len(comparison.Changes), *out)
+	return 0
+}
+
+func verify(args []string) int {
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "proofshot verify needs one report directory")
+		return 2
+	}
+	if err := report.VerifyBundle(fs.Arg(0)); err != nil {
+		fmt.Fprintln(os.Stderr, "verification failed:", err)
+		return 1
+	}
+	r, err := report.ReadReport(fs.Arg(0) + string(os.PathSeparator) + "report.json")
+	if err != nil || !report.VerifyReport(r) {
+		fmt.Fprintln(os.Stderr, "verification failed: report integrity mismatch")
+		return 1
+	}
+	fmt.Fprintln(os.Stderr, "✓ bundle checksums and report integrity verified")
+	return 0
 }
 
 func run(args []string) int {
@@ -127,6 +184,9 @@ Usage:
   proofshot run -c "npm test" -c "npm run build" [options]
   proofshot run "npm test" "git status" [options]
   proofshot render app.log server.log [options]
+  proofshot compare --out comparison.md before/report.json after/report.json
+  proofshot verify proofshot-report
 
-The output bundle contains a searchable HTML report, paginated PNGs, and JSON.`)
+The output bundle contains failure findings, searchable HTML, paginated PNGs,
+a Markdown summary, JSON, and an integrity manifest.`)
 }

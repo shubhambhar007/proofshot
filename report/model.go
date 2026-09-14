@@ -10,6 +10,15 @@ type CommandResult struct {
 	StartedAt  time.Time     `json:"startedAt"`
 	TimedOut   bool          `json:"timedOut"`
 	Redactions int           `json:"redactions"`
+	Findings   []Finding     `json:"findings,omitempty"`
+}
+
+type Finding struct {
+	Kind     string `json:"kind"`
+	Summary  string `json:"summary"`
+	Evidence string `json:"evidence"`
+	File     string `json:"file,omitempty"`
+	Line     int    `json:"line,omitempty"`
 }
 
 type Report struct {
@@ -18,6 +27,7 @@ type Report struct {
 	Duration  time.Duration   `json:"durationNs"`
 	Failed    int             `json:"failed"`
 	Commands  []CommandResult `json:"commands"`
+	Integrity string          `json:"integrity"`
 }
 
 func New(title string, commands []CommandResult) Report {
@@ -28,5 +38,6 @@ func New(title string, commands []CommandResult) Report {
 			r.Failed++
 		}
 	}
+	r.Integrity = ReportDigest(r)
 	return r
 }

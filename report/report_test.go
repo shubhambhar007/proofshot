@@ -42,9 +42,43 @@ func TestWriteBundlePaginates(t *testing.T) {
 	if len(files) < 5 {
 		t.Fatalf("expected html, json, and multiple PNGs; got %v", files)
 	}
-	for _, name := range []string{"report.html", "report.json", "report-01.png"} {
+	for _, name := range []string{"report.html", "report.json", "summary.md", "SHA256SUMS", "report-01.png"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestAnalyzeFindsCauseAndLocation(t *testing.T) {
+	result := CommandResult{ExitCode: 1, Output: "src/app.ts:42:7 error: Cannot find module widget\n"}
+	findings := Analyze(result)
+	if len(findings) == 0 || findings[0].File != "src/app.ts" || findings[0].Line != 42 {
+		t.Fatalf("unexpected findings: %#v", findings)
+	}
+}
+
+func TestVerifyBundleDetectsChanges(t *testing.T) {
+	dir := t.TempDir()
+	r := New("Test", []CommandResult{{Command: "demo", Output: "ok\n"}})
+	if _, err := WriteBundle(r, dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyBundle(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "report.html"), []byte("changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyBundle(dir); err == nil {
+		t.Fatal("expected modified report to fail verification")
+	}
+}
+
+func TestCompareDetectsRegression(t *testing.T) {
+	before := New("before", []CommandResult{{Command: "go test ./...", ExitCode: 0, Output: "ok\n"}})
+	after := New("after", []CommandResult{{Command: "go test ./...", ExitCode: 1, Output: "FAIL\n"}})
+	comparison := Compare(before, after)
+	if len(comparison.Changes) != 1 || comparison.Changes[0].State != "regressed" {
+		t.Fatalf("unexpected comparison: %#v", comparison)
 	}
 }

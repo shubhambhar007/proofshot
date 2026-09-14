@@ -1,6 +1,6 @@
 # Proofshot
 
-Proofshot turns command runs into shareable evidence: one searchable HTML report, paginated PNGs that never cut off long output, and machine-readable JSON.
+Proofshot turns command runs into shareable, verifiable evidence. It extracts the lines that explain a failure, creates paginated images that never cut output off, and compares one run with another.
 
 It is deliberately not another code-screenshot tool. Proofshot captures multiple commands as one report, records failures and timings, automatically redacts common secrets, and paginates output for tools that compress or reject extremely tall images.
 
@@ -14,6 +14,10 @@ It is deliberately not another code-screenshot tool. Proofshot captures multiple
 - Create JSON for CI integrations and future hosted reports
 - Render existing log files without executing their contents
 - Return a failing process status if any captured command fails
+- Pull likely root-cause lines and file locations out of noisy failures
+- Generate a PR/issue-ready Markdown summary
+- Detect regressions, fixes, duration changes, and output-size changes between runs
+- Verify every artifact in a bundle with SHA-256 checksums
 
 ## Install
 
@@ -51,15 +55,35 @@ Render logs without executing anything:
 proofshot render --title "Incident evidence" app.log worker.log
 ```
 
+Verify that a bundle has not changed since capture:
+
+```sh
+proofshot verify proofshot-report
+```
+
+Compare a baseline with a new run:
+
+```sh
+proofshot compare --out comparison.md baseline/report.json proofshot-report/report.json
+```
+
 The default output is `proofshot-report/`:
 
 ```text
 proofshot-report/
 ├── report.html
 ├── report.json
+├── summary.md
+├── SHA256SUMS
 ├── report-01.png
 └── report-02.png
 ```
+
+## Why this is more than a log file
+
+A log preserves text. Proofshot preserves the result: command boundaries, exit codes, timings, redactions, probable failure causes, shareable visual pages, and a machine-readable history that can answer “what changed?” The HTML remains searchable and the Markdown summary can be pasted directly into a pull request or incident ticket.
+
+Checksum verification detects files modified after capture when the manifest is trusted. Cryptographic signing and hosted provenance are natural paid-tier follow-ups; the current local integrity check is not an identity signature.
 
 ## Safety
 
