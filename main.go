@@ -15,7 +15,7 @@ import (
 	"github.com/shubhambhar007/proofshot/report"
 )
 
-const version = "0.4.0"
+const version = "0.5.0"
 
 type commandsFlag []string
 
@@ -58,11 +58,13 @@ func main() {
 func share(args []string) int {
 	fs := flag.NewFlagSet("share", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	include := fs.String("include", "", "1-based command numbers or ranges, e.g. 1,3-5 (default: all)")
+	include := fs.String("include", "", "1-based command numbers or ranges, e.g. 1,3-5 (overrides suggestions)")
 	context := fs.String("context", "", "short situation description for the recipient")
 	question := fs.String("question", "", "what you need the recipient to answer")
 	out := fs.String("out", "handoff.html", "single-file HTML output")
 	list := fs.Bool("list", false, "show numbered commands without exporting")
+	suggest := fs.Bool("suggest", false, "show recommended evidence steps and reasons")
+	all := fs.Bool("all", false, "include every command instead of the suggested subset")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -79,14 +81,44 @@ func share(args []string) int {
 		fmt.Fprintln(os.Stderr, "source report integrity mismatch")
 		return 1
 	}
+	suggestions := report.SuggestCommands(source)
 	if *list {
+		reasons := map[int]string{}
+		for _, item := range suggestions {
+			reasons[item.Number] = item.Reason
+		}
 		for index, command := range source.Commands {
 			clean, _ := report.Redact(command.Command)
-			fmt.Printf("%d. exit %d · %s\n", index+1, command.ExitCode, clean)
+			fmt.Printf("%d. exit %d · %s", index+1, command.ExitCode, clean)
+			if reason := reasons[index+1]; reason != "" {
+				fmt.Printf("  ← suggested: %s", reason)
+			}
+			fmt.Println()
 		}
 		return 0
 	}
-	selected, err := selectCommands(*include, len(source.Commands))
+	if *suggest {
+		for _, item := range suggestions {
+			clean, _ := report.Redact(source.Commands[item.Number-1].Command)
+			fmt.Printf("%d. %s — %s\n", item.Number, clean, item.Reason)
+		}
+		return 0
+	}
+	if *include != "" && *all {
+		fmt.Fprintln(os.Stderr, "choose either --include or --all")
+		return 2
+	}
+	selection := *include
+	if *all {
+		selection = ""
+	} else if selection == "" {
+		parts := make([]string, 0, len(suggestions))
+		for _, item := range suggestions {
+			parts = append(parts, strconv.Itoa(item.Number))
+		}
+		selection = strings.Join(parts, ",")
+	}
+	selected, err := selectCommands(selection, len(source.Commands))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
@@ -100,7 +132,7 @@ func share(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Fprintf(os.Stderr, "✓ %d command(s) exported → %s\n", len(h.Commands), *out)
+	fmt.Fprintf(os.Stderr, "✓ %d of %d command(s) exported → %s\n", len(h.Commands), len(source.Commands), *out)
 	if len(h.Warnings) > 0 {
 		fmt.Fprintf(os.Stderr, "Review before sending: %s may appear.\n", strings.Join(h.Warnings, ", "))
 	}
@@ -408,6 +440,7 @@ Usage:
   proofshot run -c "npm test" -c "npm run build" [options]
   proofshot record [--title "Debugging session"] [--out proofshot-session]
   proofshot share --list proofshot-session/report.json
+  proofshot share --suggest proofshot-session/report.json
   proofshot share --include 1,3-5 --context "..." --question "..." proofshot-session/report.json
   proofshot run "npm test" "git status" [options]
   proofshot render app.log server.log [options]

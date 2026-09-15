@@ -63,6 +63,7 @@ After recording, choose only the relevant steps and add the recipient's question
 
 ```sh
 proofshot share --list checkout-debug/report.json
+proofshot share --suggest checkout-debug/report.json
 proofshot share \
   --include 1,3-5 \
   --context "Checkout fails after the dependency update" \
@@ -72,6 +73,8 @@ proofshot share \
 ```
 
 The handoff is one self-contained HTML file, with live output preserved in original command order. Proofshot reruns secret redaction on both command text and output and warns about identifying content such as email addresses, local paths, and private network addresses. This is a review aid, not a guarantee; open the file and inspect it before sending. No hosted upload happens.
+
+Without `--include`, Proofshot recommends a concise evidence subset: failed commands, the step immediately before the first failure, and the first successful step afterward. Each recommendation says why it was included. The handoff also writes a factual summary of the selected results. These are sequence-based heuristics, not an AI diagnosis or proof that the preceding command caused the failure. Use `--all` to export every command or `--include` to override the recommendation.
 
 Quoted positional commands work too:
 

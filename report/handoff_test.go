@@ -35,3 +35,30 @@ func TestHandoffSelectsRedactsAndEscapes(t *testing.T) {
 		t.Fatal("expected redaction and failure evidence")
 	}
 }
+
+func TestSuggestCommandsSurfacesFailureContextAndRecovery(t *testing.T) {
+	source := New("investigation", []CommandResult{
+		{Command: "setup", ExitCode: 0},
+		{Command: "check config", ExitCode: 0},
+		{Command: "build", ExitCode: 2, Output: "app.go:3: error: failed"},
+		{Command: "inspect logs", ExitCode: 0},
+		{Command: "cleanup", ExitCode: 0},
+	})
+	suggestions := SuggestCommands(source)
+	want := []int{2, 3, 4}
+	if len(suggestions) != len(want) {
+		t.Fatalf("suggestions = %#v", suggestions)
+	}
+	for i, number := range want {
+		if suggestions[i].Number != number {
+			t.Fatalf("suggestions = %#v", suggestions)
+		}
+	}
+	h, err := MakeHandoff(source, want, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.Summary, "first captured failure") || len(h.Steps) != 3 {
+		t.Fatalf("summary/steps = %#v", h)
+	}
+}
