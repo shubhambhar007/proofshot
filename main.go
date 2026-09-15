@@ -15,7 +15,7 @@ import (
 	"github.com/shubhambhar007/proofshot/report"
 )
 
-const version = "0.6.0"
+const version = "0.7.0"
 
 type commandsFlag []string
 
@@ -40,6 +40,8 @@ func main() {
 		os.Exit(record(os.Args[2:]))
 	case "share":
 		os.Exit(share(os.Args[2:]))
+	case "recheck":
+		os.Exit(recheck(os.Args[2:]))
 	case "compare":
 		os.Exit(compare(os.Args[2:]))
 	case "verify":
@@ -53,6 +55,108 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+}
+
+func recheck(args []string) int {
+	fs := flag.NewFlagSet("recheck", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	include := fs.String("include", "", "1-based command numbers or ranges (default: suggested steps)")
+	cwd := fs.String("cwd", "", "working directory for commands (default: current directory)")
+	out := fs.String("out", "recheck-report", "output bundle directory")
+	timeout := fs.Duration("timeout", 5*time.Minute, "timeout per command")
+	execute := fs.Bool("execute", false, "explicitly run the previewed commands")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "proofshot recheck needs one source report.json file")
+		return 2
+	}
+	source, err := report.ReadReport(fs.Arg(0))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if source.Integrity != "" && !report.VerifyReport(source) {
+		fmt.Fprintln(os.Stderr, "source report integrity mismatch")
+		return 1
+	}
+	selection := *include
+	if selection == "" {
+		parts := []string{}
+		for _, suggestion := range report.SuggestCommands(source) {
+			parts = append(parts, strconv.Itoa(suggestion.Number))
+		}
+		selection = strings.Join(parts, ",")
+	}
+	selected, err := selectCommands(selection, len(source.Commands))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	for _, number := range selected {
+		command := source.Commands[number-1].Command
+		clean, _ := report.Redact(command)
+		fmt.Fprintf(os.Stderr, "%d. $ %s\n", number, clean)
+		if strings.Contains(clean, "[REDACTED]") {
+			fmt.Fprintln(os.Stderr, "Cannot recheck a command containing a redacted secret; choose another step with --include.")
+			return 2
+		}
+		if _, isCD, _ := changeDirectory(command, "."); isCD {
+			fmt.Fprintln(os.Stderr, "Cannot recheck cd steps; set --cwd explicitly and select executable commands.")
+			return 2
+		}
+	}
+	if !*execute {
+		fmt.Fprintln(os.Stderr, "Preview only. Review every command and its effects, then rerun with --execute to authorize execution.")
+		return 0
+	}
+	fmt.Fprintln(os.Stderr, "Executing explicitly approved commands; source checksums are not an identity signature.")
+	results := make([]report.CommandResult, 0, len(selected))
+	before := make([]report.CommandResult, 0, len(selected))
+	for _, number := range selected {
+		command := source.Commands[number-1].Command
+		fmt.Fprintf(os.Stderr, "[%d/%d] %s\n", len(results)+1, len(selected), command)
+		results = append(results, report.Execute(command, *cwd, *timeout, true))
+		before = append(before, source.Commands[number-1])
+	}
+	current := report.New("Recheck of "+source.Title, results)
+	files, err := report.WriteBundle(current, *out)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "write report:", err)
+		return 1
+	}
+	printResult(current, files)
+	baselineSubset := report.New(source.Title, before)
+	deltas := report.MatchBaseline(baselineSubset, current)
+	numbers := make([]int, len(results))
+	for i := range numbers {
+		numbers[i] = i + 1
+	}
+	h, err := report.MakeHandoff(current, numbers, "Same selected checks run in a different environment", "What explains the observed difference?")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := h.AttachBaseline(source, deltas); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	handoffPath := filepath.Join(*out, "recheck-handoff.html")
+	if err := h.WriteHTML(handoffPath); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := report.AddBundleArtifact(*out, handoffPath); err != nil {
+		fmt.Fprintln(os.Stderr, "manifest handoff:", err)
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "Comparison handoff: %s\n", handoffPath)
+	if len(h.Warnings) > 0 {
+		fmt.Fprintf(os.Stderr, "Review before sending: %s may appear.\n", strings.Join(h.Warnings, ", "))
+	}
+	fmt.Fprintln(os.Stderr, "Review the output and privacy warnings before sharing it back.")
+	return 0
 }
 
 func share(args []string) int {
@@ -464,6 +568,8 @@ Usage:
   proofshot share --list proofshot-session/report.json
   proofshot share --suggest proofshot-session/report.json
   proofshot share --baseline earlier/report.json current/report.json
+  proofshot recheck shared/report.json [--include 1,3]
+  proofshot recheck --execute --cwd /path/to/project shared/report.json
   proofshot share --include 1,3-5 --context "..." --question "..." proofshot-session/report.json
   proofshot run "npm test" "git status" [options]
   proofshot render app.log server.log [options]

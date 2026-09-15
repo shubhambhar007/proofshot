@@ -45,6 +45,25 @@ func writeManifest(directory string, paths []string) (string, error) {
 	return manifestPath, os.WriteFile(manifestPath, []byte(content.String()), 0o644)
 }
 
+// AddBundleArtifact includes a newly generated file in the existing manifest.
+func AddBundleArtifact(directory, path string) error {
+	if filepath.Dir(path) != directory || filepath.Base(path) != "recheck-handoff.html" {
+		return fmt.Errorf("unexpected bundle artifact %s", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(data)
+	manifest, err := os.OpenFile(filepath.Join(directory, "SHA256SUMS"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer manifest.Close()
+	_, err = fmt.Fprintf(manifest, "%x  %s\n", sum, filepath.Base(path))
+	return err
+}
+
 func VerifyBundle(directory string) error {
 	file, err := os.Open(filepath.Join(directory, "SHA256SUMS"))
 	if err != nil {

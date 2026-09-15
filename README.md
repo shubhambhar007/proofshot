@@ -88,6 +88,19 @@ proofshot share \
 
 The default selection then prioritizes regressions, fixes, changed exits, and changed output. Each selected step shows its earlier and current exit status plus the first differing output line. Matching uses command text and occurrence order, so repeated commands remain distinct. The difference is factual evidence, not a diagnosis. The baseline snippets are redacted again and the handoff still requires a privacy review before sending.
 
+## Two-way troubleshooting
+
+Large outputs open on a numbered excerpt near the first detected diagnostic; the full, uncut output is available via **Show full output**. This helps a recipient reach the signal without losing the evidence trail.
+
+A recipient with the project can preview the suggested checks and selectively run them on their machine:
+
+```sh
+proofshot recheck shared/report.json
+proofshot recheck --include 1,3 --cwd /path/to/project --execute shared/report.json
+```
+
+The first command only previews—it never executes. `--execute` is an explicit opt-in after reviewing every command, which may have side effects. Recheck creates a new bundle and `recheck-handoff.html` showing earlier/current results and first differing lines. It refuses commands containing redacted secrets and `cd` steps. Reports have checksums but no identity signature: accept a report only from a trusted person, inspect its commands, and use an appropriate environment before running them. The generated files remain local.
+
 Quoted positional commands work too:
 
 ```sh
@@ -134,7 +147,7 @@ Checksum verification detects files modified after capture when the manifest is 
 
 Redaction is enabled by default. It is best-effort, so always review a report before sharing it publicly. `--no-redact` is available for controlled environments.
 
-`render` only reads files. It never executes their contents. `run` is the only command that executes shell input.
+`render` only reads logs. `share` reads reports and writes a handoff without executing their contents. `run` and `record` execute shell commands; `recheck` executes report commands only with the explicit `--execute` flag.
 
 ## Product direction
 
