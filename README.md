@@ -1,166 +1,130 @@
 # Proofshot
 
-Proofshot turns command runs into shareable, verifiable evidence. It extracts the lines that explain a failure, creates paginated images that never cut output off, and compares one run with another.
+Proofshot turns a messy series of terminal commands into a useful troubleshooting handoff. Record the commands and their output, choose the evidence that matters, and send a single HTML file that explains what failed. Long logs open near the diagnostic without discarding the full output.
 
-It is deliberately not another code-screenshot tool. Proofshot captures multiple commands as one report, records failures and timings, automatically redacts common secrets, and paginates output for tools that compress or reject extremely tall images.
+No account or upload is required. Reports are generated locally.
 
-## MVP features
+## Quickstart
 
-- Run any number of commands in sequence
-- Record an unplanned, command-by-command terminal session with live output
-- Capture combined stdout and stderr, exit code, runtime, and timeout status
-- Automatically redact API keys, bearer tokens, GitHub tokens, AWS access keys, and Stripe-style keys
-- Create a searchable, printable HTML report
-- Create numbered 1280×900 PNG pages for long output
-- Create JSON for CI integrations and future hosted reports
-- Render existing log files without executing their contents
-- Return a failing process status if any captured command fails
-- Pull likely root-cause lines and file locations out of noisy failures
-- Generate a PR/issue-ready Markdown summary
-- Detect regressions, fixes, duration changes, and output-size changes between runs
-- Verify every artifact in a bundle with SHA-256 checksums
-- Curate a standalone troubleshooting handoff from selected commands after recording
-
-## Install
-
-Requires Go 1.24 or newer.
-
-Once the repository is published, users will be able to install it with `go install`. For now, build the local MVP:
-
-For local development:
+Requires Go 1.24 or newer. Build from this directory:
 
 ```sh
 go build -o proofshot .
 ```
 
-## Usage
-
-Capture several commands:
+Start a recording, work normally, then type `exit` or press Ctrl-D:
 
 ```sh
-proofshot run \
-  -c "npm test" \
-  -c "npm run build" \
-  -c "git status" \
-  --title "Release verification"
-```
-
-Record commands interactively, then type `exit` or press Ctrl-D to create the report:
-
-```sh
-proofshot record --title "Debugging checkout failure" --out checkout-debug
+./proofshot record --title "Checkout investigation" --out checkout-session
 
 proofshot:~/projects/app$ npm test
 proofshot:~/projects/app$ git status
-proofshot:~/projects/app$ cd ../another-project
-proofshot:~/projects/another-project$ go test ./...
-proofshot:~/projects/another-project$ exit
+proofshot:~/projects/app$ exit
 ```
 
-The prompt shows the current working directory (shortening your home directory to `~`). Commands execute in sequence with output shown live and captured simultaneously. Directory changes made with `cd` persist during the recording and update the prompt immediately. The recorder is intentionally command-oriented; full-screen programs such as Vim and interactive password prompts are not supported in this MVP.
+The prompt shows the current working directory; `cd` changes persist between commands. Output appears live while Proofshot captures command boundaries, exit codes, durations, and failure findings.
 
-After recording, choose only the relevant steps and add the recipient's question:
+Review the suggested evidence and make a handoff:
 
 ```sh
-proofshot share --list checkout-debug/report.json
-proofshot share --suggest checkout-debug/report.json
-proofshot share \
-  --include 1,3-5 \
-  --context "Checkout fails after the dependency update" \
-  --question "Which failing step should we fix first?" \
+./proofshot share --suggest checkout-session/report.json
+./proofshot share \
+  --context "Checkout broke after updating dependencies" \
+  --question "Which failing step should we investigate first?" \
   --out checkout-handoff.html \
-  checkout-debug/report.json
+  checkout-session/report.json
 ```
 
-The handoff is one self-contained HTML file, with live output preserved in original command order. Proofshot reruns secret redaction on both command text and output and warns about identifying content such as email addresses, local paths, and private network addresses. This is a review aid, not a guarantee; open the file and inspect it before sending. No hosted upload happens.
+Open `checkout-handoff.html`, review it for sensitive information, then send that one file. Proofshot does not upload it. By default, the handoff suggests failed commands, the preceding step, and the first successful step afterward. `--include 1,3-5` selects steps manually; `--all` includes everything.
 
-Without `--include`, Proofshot recommends a concise evidence subset: failed commands, the step immediately before the first failure, and the first successful step afterward. Each recommendation says why it was included. The handoff also writes a factual summary of the selected results. These are sequence-based heuristics, not an AI diagnosis or proof that the preceding command caused the failure. Use `--all` to export every command or `--include` to override the recommendation.
+## What recipients get
 
-For a “works on my machine” handoff, attach an earlier run:
+- A short, factual account of the selected results and why each command was included.
+- The command, exit code, runtime, likely diagnostic, and its output.
+- For long output, a numbered excerpt around the diagnostic plus a **Show full output** control. The full evidence is never dropped.
+- A privacy warning for potentially identifying content; automatic secret redaction runs again on the title, command text, and output.
+
+Suggestions are deterministic heuristics, not an AI diagnosis. A preceding command is sequence context, not a proven cause.
+
+## Compare two runs
+
+If a check passed before but fails now, attach the earlier report:
 
 ```sh
-proofshot share \
+./proofshot share \
   --baseline baseline/report.json \
   --question "Why does this fail now?" \
   --out regression-handoff.html \
   current/report.json
 ```
 
-The default selection then prioritizes regressions, fixes, changed exits, and changed output. Each selected step shows its earlier and current exit status plus the first differing output line. Matching uses command text and occurrence order, so repeated commands remain distinct. The difference is factual evidence, not a diagnosis. The baseline snippets are redacted again and the handoff still requires a privacy review before sending.
+Proofshot prioritizes regressions and changed output. The handoff shows earlier/current exit codes and the first differing output line. Repeated commands are matched in occurrence order. Differences are observations, not claims about root cause.
 
-## Two-way troubleshooting
+## Recheck on another machine
 
-Large outputs open on a numbered excerpt near the first detected diagnostic; the full, uncut output is available via **Show full output**. This helps a recipient reach the signal without losing the evidence trail.
-
-A recipient with the project can preview the suggested checks and selectively run them on their machine:
+A recipient who has the project can preview the proposed commands without running them:
 
 ```sh
-proofshot recheck shared/report.json
-proofshot recheck --include 1,3 --cwd /path/to/project --execute shared/report.json
+./proofshot recheck shared/report.json
 ```
 
-The first command only previews—it never executes. `--execute` is an explicit opt-in after reviewing every command, which may have side effects. Recheck creates a new bundle and `recheck-handoff.html` showing earlier/current results and first differing lines. It refuses commands containing redacted secrets and `cd` steps. Reports have checksums but no identity signature: accept a report only from a trusted person, inspect its commands, and use an appropriate environment before running them. The generated files remain local.
-
-Quoted positional commands work too:
+After inspecting every command and choosing an appropriate working directory, they may explicitly opt in:
 
 ```sh
-proofshot run "go test ./..." "git status --short"
+./proofshot recheck \
+  --include 1,3 \
+  --cwd /path/to/project \
+  --out my-recheck \
+  --execute \
+  shared/report.json
 ```
 
-Render logs without executing anything:
+The result includes `my-recheck/recheck-handoff.html`, comparing those checks with the sender's run. Recheck refuses commands containing redacted secrets and `cd` steps. **Shared commands may have side effects.** Reports have checksums but no identity signature; accept them only from a trusted sender and inspect the preview before using `--execute`.
+
+## Other commands
+
+Run a known series without entering an interactive session:
 
 ```sh
-proofshot render --title "Incident evidence" app.log worker.log
+./proofshot run -c "npm test" -c "npm run build" --out release-check
 ```
 
-Verify that a bundle has not changed since capture:
+Turn existing logs into a report without executing them:
 
 ```sh
-proofshot verify proofshot-report
+./proofshot render --title "Incident output" --out incident app.log worker.log
 ```
 
-Compare a baseline with a new run:
+Compare two report JSON files as Markdown:
 
 ```sh
-proofshot compare --out comparison.md baseline/report.json proofshot-report/report.json
+./proofshot compare --out comparison.md baseline/report.json current/report.json
 ```
 
-The default output is `proofshot-report/`:
+Verify a newly generated bundle:
 
-```text
-proofshot-report/
-├── report.html
-├── report.json
-├── summary.md
-├── SHA256SUMS
-├── report-01.png
-└── report-02.png
+```sh
+./proofshot verify checkout-session
 ```
 
-## Why this is more than a log file
+An ordinary bundle contains `report.html`, `report.json`, `summary.md`, `SHA256SUMS`, and numbered `report-01.png` pages. Recheck bundles also include `recheck-handoff.html` in the checksum manifest. Older bundles created before checksums were added cannot be verified with this command.
 
-A log preserves text. Proofshot preserves the result: command boundaries, exit codes, timings, redactions, probable failure causes, shareable visual pages, and a machine-readable history that can answer “what changed?” The HTML remains searchable and the Markdown summary can be pasted directly into a pull request or incident ticket.
+## Safety and limitations
 
-Checksum verification detects files modified after capture when the manifest is trusted. Cryptographic signing and hosted provenance are natural paid-tier follow-ups; the current local integrity check is not an identity signature.
+- Redaction is best-effort. Always inspect HTML, images, Markdown, and JSON before sharing; secrets or private paths may still appear.
+- The checksum manifest detects modified artifacts when the manifest is trusted. It does **not** prove who created a report and can be regenerated by an attacker.
+- `record` is command-oriented, not a full PTY. Full-screen applications and interactive password prompts are not supported in this MVP.
+- `run` and `record` execute shell commands. `render`, `share`, `compare`, and `verify` do not. `recheck` only executes with `--execute`.
+- Nothing is hosted or uploaded by Proofshot today.
 
-## Safety
+## Development
 
-Redaction is enabled by default. It is best-effort, so always review a report before sharing it publicly. `--no-redact` is available for controlled environments.
-
-`render` only reads logs. `share` reads reports and writes a handoff without executing their contents. `run` and `record` execute shell commands; `recheck` executes report commands only with the explicit `--execute` flag.
-
-## Product direction
-
-The strongest commercial wedge is trustworthy sharing rather than prettier pixels:
-
-1. CI uploads with stable report URLs
-2. Team workspaces and retention controls
-3. PR/issue comments with concise failure summaries
-4. Organization-level redaction policies and audit logs
-5. Private, self-hosted report storage
-
-Advertising fits a free hosted public-report tier, but paid private reports, team history, and CI integrations are likely stronger revenue paths. An acquisition target would more naturally be a developer-tooling, observability, CI, or documentation company.
+```sh
+go test ./...
+go vet ./...
+go build -o proofshot .
+```
 
 ## License
 
-Copyright retained. Choose a license before publishing the repository.
+Copyright retained. A license has not been chosen yet.
