@@ -19,6 +19,7 @@ It is deliberately not another code-screenshot tool. Proofshot captures multiple
 - Generate a PR/issue-ready Markdown summary
 - Detect regressions, fixes, duration changes, and output-size changes between runs
 - Verify every artifact in a bundle with SHA-256 checksums
+- Curate a standalone troubleshooting handoff from selected commands after recording
 
 ## Install
 
@@ -57,6 +58,20 @@ proofshot:~/projects/another-project$ exit
 ```
 
 The prompt shows the current working directory (shortening your home directory to `~`). Commands execute in sequence with output shown live and captured simultaneously. Directory changes made with `cd` persist during the recording and update the prompt immediately. The recorder is intentionally command-oriented; full-screen programs such as Vim and interactive password prompts are not supported in this MVP.
+
+After recording, choose only the relevant steps and add the recipient's question:
+
+```sh
+proofshot share --list checkout-debug/report.json
+proofshot share \
+  --include 1,3-5 \
+  --context "Checkout fails after the dependency update" \
+  --question "Which failing step should we fix first?" \
+  --out checkout-handoff.html \
+  checkout-debug/report.json
+```
+
+The handoff is one self-contained HTML file, with live output preserved in original command order. Proofshot reruns secret redaction on both command text and output and warns about identifying content such as email addresses, local paths, and private network addresses. This is a review aid, not a guarantee; open the file and inspect it before sending. No hosted upload happens.
 
 Quoted positional commands work too:
 

@@ -19,3 +19,18 @@ func TestDisplayDirectoryShowsPathAndShortensHome(t *testing.T) {
 		t.Fatalf("displayDirectory() = %q", got)
 	}
 }
+
+func TestSelectCommandsKeepsOriginalOrder(t *testing.T) {
+	selected, err := selectCommands("4,1,2-3,2", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, number := range selected {
+		if number != i+1 {
+			t.Fatalf("selected = %v", selected)
+		}
+	}
+	if _, err := selectCommands("1,9", 4); err == nil {
+		t.Fatal("expected out-of-range selection to fail")
+	}
+}

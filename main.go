@@ -7,13 +7,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/shubhambhar007/proofshot/report"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 type commandsFlag []string
 
@@ -36,6 +38,8 @@ func main() {
 		os.Exit(render(os.Args[2:]))
 	case "record":
 		os.Exit(record(os.Args[2:]))
+	case "share":
+		os.Exit(share(os.Args[2:]))
 	case "compare":
 		os.Exit(compare(os.Args[2:]))
 	case "verify":
@@ -49,6 +53,102 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+}
+
+func share(args []string) int {
+	fs := flag.NewFlagSet("share", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	include := fs.String("include", "", "1-based command numbers or ranges, e.g. 1,3-5 (default: all)")
+	context := fs.String("context", "", "short situation description for the recipient")
+	question := fs.String("question", "", "what you need the recipient to answer")
+	out := fs.String("out", "handoff.html", "single-file HTML output")
+	list := fs.Bool("list", false, "show numbered commands without exporting")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "proofshot share needs one report.json file")
+		return 2
+	}
+	source, err := report.ReadReport(fs.Arg(0))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if source.Integrity != "" && !report.VerifyReport(source) {
+		fmt.Fprintln(os.Stderr, "source report integrity mismatch")
+		return 1
+	}
+	if *list {
+		for index, command := range source.Commands {
+			clean, _ := report.Redact(command.Command)
+			fmt.Printf("%d. exit %d · %s\n", index+1, command.ExitCode, clean)
+		}
+		return 0
+	}
+	selected, err := selectCommands(*include, len(source.Commands))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	h, err := report.MakeHandoff(source, selected, *context, *question)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := h.WriteHTML(*out); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "✓ %d command(s) exported → %s\n", len(h.Commands), *out)
+	if len(h.Warnings) > 0 {
+		fmt.Fprintf(os.Stderr, "Review before sending: %s may appear.\n", strings.Join(h.Warnings, ", "))
+	}
+	fmt.Fprintln(os.Stderr, "No upload occurred. Open the HTML file and inspect it before sharing.")
+	return 0
+}
+
+func selectCommands(spec string, total int) ([]int, error) {
+	if total == 0 {
+		return nil, fmt.Errorf("source report contains no commands")
+	}
+	if strings.TrimSpace(spec) == "" {
+		selected := make([]int, total)
+		for i := range selected {
+			selected[i] = i + 1
+		}
+		return selected, nil
+	}
+	seen := map[int]bool{}
+	for _, part := range strings.Split(spec, ",") {
+		bounds := strings.Split(strings.TrimSpace(part), "-")
+		if len(bounds) == 0 || len(bounds) > 2 {
+			return nil, fmt.Errorf("invalid command selection %q", part)
+		}
+		start, err := strconv.Atoi(strings.TrimSpace(bounds[0]))
+		if err != nil {
+			return nil, fmt.Errorf("invalid command selection %q", part)
+		}
+		end := start
+		if len(bounds) == 2 {
+			end, err = strconv.Atoi(strings.TrimSpace(bounds[1]))
+			if err != nil {
+				return nil, fmt.Errorf("invalid command selection %q", part)
+			}
+		}
+		if start < 1 || end > total || end < start {
+			return nil, fmt.Errorf("command selection %q is outside 1..%d", part, total)
+		}
+		for i := start; i <= end; i++ {
+			seen[i] = true
+		}
+	}
+	selected := make([]int, 0, len(seen))
+	for number := range seen {
+		selected = append(selected, number)
+	}
+	sort.Ints(selected)
+	return selected, nil
 }
 
 func record(args []string) int {
@@ -307,6 +407,8 @@ func usage() {
 Usage:
   proofshot run -c "npm test" -c "npm run build" [options]
   proofshot record [--title "Debugging session"] [--out proofshot-session]
+  proofshot share --list proofshot-session/report.json
+  proofshot share --include 1,3-5 --context "..." --question "..." proofshot-session/report.json
   proofshot run "npm test" "git status" [options]
   proofshot render app.log server.log [options]
   proofshot compare --out comparison.md before/report.json after/report.json
