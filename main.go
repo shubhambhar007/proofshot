@@ -15,7 +15,7 @@ import (
 	"github.com/shubhambhar007/proofshot/report"
 )
 
-const version = "0.5.0"
+const version = "0.6.0"
 
 type commandsFlag []string
 
@@ -65,6 +65,7 @@ func share(args []string) int {
 	list := fs.Bool("list", false, "show numbered commands without exporting")
 	suggest := fs.Bool("suggest", false, "show recommended evidence steps and reasons")
 	all := fs.Bool("all", false, "include every command instead of the suggested subset")
+	baselinePath := fs.String("baseline", "", "earlier report.json to show observed changes")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -82,6 +83,21 @@ func share(args []string) int {
 		return 1
 	}
 	suggestions := report.SuggestCommands(source)
+	var baseline report.Report
+	var deltas map[int]report.BaselineDelta
+	if *baselinePath != "" {
+		baseline, err = report.ReadReport(*baselinePath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "read baseline:", err)
+			return 1
+		}
+		if baseline.Integrity != "" && !report.VerifyReport(baseline) {
+			fmt.Fprintln(os.Stderr, "baseline report integrity mismatch")
+			return 1
+		}
+		deltas = report.MatchBaseline(baseline, source)
+		suggestions = report.SuggestAgainstBaseline(source, deltas)
+	}
 	if *list {
 		reasons := map[int]string{}
 		for _, item := range suggestions {
@@ -127,6 +143,12 @@ func share(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	if *baselinePath != "" {
+		if err := h.AttachBaseline(baseline, deltas); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 	}
 	if err := h.WriteHTML(*out); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -441,6 +463,7 @@ Usage:
   proofshot record [--title "Debugging session"] [--out proofshot-session]
   proofshot share --list proofshot-session/report.json
   proofshot share --suggest proofshot-session/report.json
+  proofshot share --baseline earlier/report.json current/report.json
   proofshot share --include 1,3-5 --context "..." --question "..." proofshot-session/report.json
   proofshot run "npm test" "git status" [options]
   proofshot render app.log server.log [options]

@@ -76,6 +76,18 @@ The handoff is one self-contained HTML file, with live output preserved in origi
 
 Without `--include`, Proofshot recommends a concise evidence subset: failed commands, the step immediately before the first failure, and the first successful step afterward. Each recommendation says why it was included. The handoff also writes a factual summary of the selected results. These are sequence-based heuristics, not an AI diagnosis or proof that the preceding command caused the failure. Use `--all` to export every command or `--include` to override the recommendation.
 
+For a “works on my machine” handoff, attach an earlier run:
+
+```sh
+proofshot share \
+  --baseline baseline/report.json \
+  --question "Why does this fail now?" \
+  --out regression-handoff.html \
+  current/report.json
+```
+
+The default selection then prioritizes regressions, fixes, changed exits, and changed output. Each selected step shows its earlier and current exit status plus the first differing output line. Matching uses command text and occurrence order, so repeated commands remain distinct. The difference is factual evidence, not a diagnosis. The baseline snippets are redacted again and the handoff still requires a privacy review before sending.
+
 Quoted positional commands work too:
 
 ```sh
