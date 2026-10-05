@@ -34,6 +34,8 @@ proofshot:~/projects/app$ exit
 
 The prompt shows the current working directory; `cd` changes persist between commands. Output appears live while Proofshot captures command boundaries, exit codes, durations, and failure findings.
 
+![Proofshot recording commands while preserving working-directory changes](docs/assets/proofshot-record.png)
+
 Review the suggested evidence and make a handoff:
 
 ```sh
@@ -97,6 +99,8 @@ After inspecting every command and choosing an appropriate working directory, th
 
 The result includes `my-recheck/recheck-handoff.html`, comparing those checks with the sender's run. Recheck refuses commands containing redacted secrets and `cd` steps. **Shared commands may have side effects.** Reports have checksums but no identity signature; accept them only from a trusted sender and inspect the preview before using `--execute`.
 
+![Proofshot previewing commands before an explicitly authorized cross-machine recheck](docs/assets/proofshot-recheck.png)
+
 ## Other commands
 
 Run a known series without entering an interactive session:
@@ -124,6 +128,8 @@ Verify a newly generated bundle:
 ```
 
 An ordinary bundle contains `report.html`, `report.json`, `summary.md`, `SHA256SUMS`, and numbered `report-01.png` pages. Recheck bundles also include `recheck-handoff.html` in the checksum manifest. Older bundles created before checksums were added cannot be verified with this command.
+
+![Proofshot automatically redacting a secret and verifying the generated evidence bundle](docs/assets/proofshot-privacy.png)
 
 ## Safety and limitations
 
