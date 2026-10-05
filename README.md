@@ -4,6 +4,16 @@ Proofshot turns a messy series of terminal commands into a useful troubleshootin
 
 No account or upload is required. Reports are generated locally.
 
+<p align="center">
+  <img src="docs/assets/proofshot-handoff.png" alt="Proofshot troubleshooting handoff showing a build regression, diagnostic, and focused output" width="100%">
+</p>
+
+<p align="center"><strong>Record → isolate the failure → share one file → recheck anywhere.</strong></p>
+
+| Record the real session | Find the signal | Share useful evidence | Recheck safely |
+| --- | --- | --- | --- |
+| Commands, output, timing, and working directories | Failure-first excerpts and baseline regressions | One private, portable HTML handoff | Preview first, then explicitly opt in to execute |
+
 ## Quickstart
 
 Requires Go 1.24 or newer. Build from this directory:
@@ -45,6 +55,12 @@ Open `checkout-handoff.html`, review it for sensitive information, then send tha
 - A privacy warning for potentially identifying content; automatic secret redaction runs again on the title, command text, and output.
 
 Suggestions are deterministic heuristics, not an AI diagnosis. A preceding command is sequence context, not a proven cause.
+
+### Full evidence, never cut off
+
+Proofshot also renders long terminal output as numbered image pages. Recipients can scan the complete run without relying on a cropped screenshot or losing the lines around a failure.
+
+![A Proofshot evidence page preserving a long terminal build log](docs/assets/proofshot-evidence.png)
 
 ## Compare two runs
 
